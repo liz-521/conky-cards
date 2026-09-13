@@ -1,7 +1,7 @@
 # token 卡分页配置（zcode-today.py 每 15s 按行翻页；每页固定 6 槽，不足补空行）
 # 可用块：total 总量+5h ｜ inout 入/出+首字 ｜ models 次数+主力 ｜ peakbar 对7日峰值条
-#         roibar 回本条 ｜ chart 近7日柱图 ｜ yesterday 昨日+环比 ｜ month 本月+日均
-#         roicash 周值金额 ｜ avgreq 均次+峰值
+#         roibar 回本双口径%(flash下限·pro上限，flash≥100%绿) ｜ chart 近7日柱图
+#         yesterday 昨日+环比 ｜ month 本月+日均 ｜ roicash 周值区间/摊销 ｜ avgreq 均次+峰值
 # 改完即生效（下一轮 15s 刷新），不用重启卡。只留一行 = 不轮播、无页码角标。
 
 total,inout,models,peakbar,roibar,chart

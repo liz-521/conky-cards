@@ -21,9 +21,9 @@ HOME = Path.home()
 HOME_CFG = HOME / '.config/conky-ai-cards'
 HOME_CFG.mkdir(parents=True, exist_ok=True)
 DB = os.path.expanduser('~/.zcode/cli/db/db.sqlite')
-F_ROI = HOME_CFG / 'roi-pct.txt'
 PLAN_YUAN = 376                                  # 月费（按你的套餐改）
-HIT, MISS, OUT = 0.02, 1.0, 4.0                  # deepseek-flash 谷价 元/百万tokens
+FLASH = (0.02, 1.0, 4.0)                         # deepseek-flash 谷价：命中/未命中/输出 元/百万
+PRO   = (0.15, 4.5, 13.5)                        # deepseek-v4-pro 谷价（档位映射口径用）
 
 if not os.path.exists(DB):
     print(0)
@@ -40,10 +40,12 @@ try:
 finally:
     con.close()
 
-cost = (hit * HIT + max(0, inp - hit) * MISS + out * OUT) / 1e6
-pct = int(100.0 * cost / (PLAN_YUAN * 7 / 30))
-try:
-    F_ROI.write_text(str(min(100, pct)))
-except Exception:
-    pass
-print(pct, '%.0f' % cost, '%.0f' % (PLAN_YUAN * 7 / 30))   # 回本% 周折算花费 周摊销（zcode-today 解析）
+def price(hit, miss, out, p):                    # 三段量 × 一档价
+    return (hit * p[0] + miss * p[1] + out * p[2]) / 1e6
+
+miss = max(0, inp - hit)
+cost_f = price(hit, miss, out, FLASH)
+cost_p = price(hit, miss, out, PRO)
+amort = PLAN_YUAN * 7 / 30
+pct_f, pct_p = int(100 * cost_f / amort), int(100 * cost_p / amort)
+print(pct_f, pct_p, '%.0f' % cost_f, '%.0f' % cost_p, '%.0f' % amort)   # 回本flash% 回本pro% 周值f 周值p 摊销

@@ -111,13 +111,13 @@ yday = con.execute(SQL_YDAY, (YDAY_MS, TODAY_MS)).fetchone()[0]
 month = con.execute(SQL_MONTH, (MONTH_MS,)).fetchone()[0]
 con.close()
 
-# 回本：姊妹脚本输出"回本% 周折算花费 周摊销"三个数（空格分隔）
+# 回本：姊妹脚本输出"回本flash% 回本pro% 周值f 周值p 摊销"五个数（空格分隔）
 try:
     _roi = subprocess.check_output(['python3', F_ROI_PY]).decode().split()
-    roi_pct, roi_cost, roi_amort = int(_roi[0]), _roi[1], _roi[2]
+    roi_pf, roi_pp, roi_cf, roi_cp, roi_amort = int(_roi[0]), int(_roi[1]), _roi[2], _roi[3], _roi[4]
 except Exception:
-    roi_pct, roi_cost, roi_amort = 0, '0', '0'
-roi_green = roi_pct >= 100                        # 已回本 → 整行绿
+    roi_pf, roi_pp, roi_cf, roi_cp, roi_amort = 0, 0, '0', '0', '0'
+roi_green = roi_pf >= 100                        # 最低口径(flash)也回本 → 绿
 
 models = sorted(models, key=lambda r: r[1], reverse=True)  # 排序在 Python 侧做
 tot = sum(r[1] for r in models); n = sum(r[2] for r in models)
@@ -171,11 +171,11 @@ BLOCKS_RENDER = {
     'inout':     '入 %s · 出 %s · ${color %s}首字 %s' % (fmt(inp), fmt(out), DIM, ttft_s),
     'models':    f'{n} 次 · {top} {int(100 * tt / tot) if tot else 0}%',
     'peakbar':   f'{peak_hot or peak_mid}${{execibar 15 {BARH},{BARW} python3 {F_BAR}}} 对7日峰值{peak_back}',
-    'roibar':    f'${{color {roi_c}}}${{execibar 15 {BARH},{ROIBW} cat {F_ROI_TXT}}} 回本 {roi_pct}%{roi_tail}',
+    'roibar':    f'${{color {roi_c}}}回本 flash {roi_pf}% · pro {roi_pp}%{roi_tail}',
     'chart':     '${color %s}${font %s}%s${font}${color %s} 近7日' % (DIM, CHART_F, chart, DIM),
     'yesterday': '${color %s}昨日 %s · ${color %s}今/昨 %d%%' % (WHITE, fmt(yday), DIM, 100.0 * total / yday if yday else 0),
     'month':     '${color %s}本月 %s · ${color %s}日均 %s' % (WHITE, fmt(month), DIM, fmt(month / month_days)),
-    'roicash':   '${color %s}周值 ¥%s / 摊销 ¥%s${color %s}' % (DIM, roi_cost, roi_amort, WHITE),
+    'roicash':   '${color %s}周值 ¥%s~%s / 摊销 ¥%s${color %s}' % (DIM, roi_cf, roi_cp, roi_amort, WHITE),
     'avgreq':    '${color %s}均次 %s · 峰值 %s' % (DIM, fmt(total / n if n else 0), fmt(peak)),
 }
 
