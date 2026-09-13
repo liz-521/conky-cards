@@ -19,7 +19,7 @@ python3 -c "import Xlib" 2>/dev/null || echo "提示: python-xlib 未装（点�
 
 echo "==> 拷贝配置 → $CONF"
 mkdir -p "$CONF/themes"
-for f in system-card.lua token-card.lua sys-body.py zcode-today.py zcode-bar.py zcode-roi.py start-all.sh; do
+for f in system-card.lua token-card.lua sys-body.py zcode-today.py zcode-bar.py zcode-roi.py pages.txt start-all.sh; do
     cp -v "$SRC/config/$f" "$CONF/$f"
 done
 for f in "$SRC"/themes/*.conf; do

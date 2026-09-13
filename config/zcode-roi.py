@@ -46,4 +46,4 @@ try:
     F_ROI.write_text(str(min(100, pct)))
 except Exception:
     pass
-print(pct)
+print(pct, '%.0f' % cost, '%.0f' % (PLAN_YUAN * 7 / 30))   # 回本% 周折算花费 周摊销（zcode-today 解析）
