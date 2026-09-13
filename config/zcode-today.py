@@ -90,6 +90,13 @@ days = [r[0] for r in con.execute(SQL_DAYS, (WEEK_MS,)).fetchall()]
 ttfts = sorted(r[0] for r in con.execute(SQL_TTFT, (TODAY_MS,)).fetchall())
 con.close()
 
+# 回本（2026-09-13 加）：姊妹脚本 zcode-roi.py 算近7日 flash 谷价折算 ÷ 周摊销月费
+try:
+    roi_pct = int(subprocess.check_output(['python3', str(HOME_CFG / 'zcode-roi.py')]).decode().split()[0])
+except Exception:
+    roi_pct = 0
+roi_green = roi_pct >= 100                        # 已回本 → 整行绿（down 色，主题跟随）
+
 models = sorted(models, key=lambda r: r[1], reverse=True)  # 排序在 Python 侧做
 tot = sum(r[1] for r in models); n = sum(r[2] for r in models)
 top, tt, _ = models[0] if models else ('—', 0, 0)
@@ -143,4 +150,9 @@ print('${color %s}总量 %s · ${color %s}5h %s' % (WHITE, fmt(total), DIM, fmt(
 print('入 %s · 出 %s · %s首字 %s' % (fmt(inp), fmt(out), '${color %s}' % DIM, ttft_s))
 print(f'{n} 次 · {top} {int(100 * tt / tot) if tot else 0}%')
 print(f'{hot}${{execibar 15 {BARH},{BARW} python3 {F_BAR}}} 对7日峰值{back}')
+# 回本行：bar 读 zcode-roi.py 写的缓存（0-100 封顶），文字用真实百分比；≥100% 整行绿
+roi_color = TH['down'] if roi_green else WHITE
+roi_bar = f'${{execibar 15 {BARH},{round(100 * S)} cat {HOME_CFG}/roi-pct.txt}}'
+roi_tail = f'${{color {WHITE}}}' if roi_green else ''
+print(f'${{color {roi_color}}}{roi_bar} 回本 {roi_pct}%{roi_tail}')
 print('${color %s}${font %s}%s${font}${color %s} 近7日' % (DIM, CHART_F, chart, DIM))
