@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+# 文件血缘：ZCode 会话 2026-09-13 创建，同晚修正"放不下"分支。用途：缩放后自动重排两卡——
+#   conky 窗口尺寸随缩放变化后，记忆的 gap 位置会导致出屏/重叠（1.3× 实测）。
+#   规则：系统卡保住记忆 y 但不出屏；两卡叠放若整体放不下，整体上移贴屏幕底；
+#   token 卡恒排系统卡正下方 8px。新位置换算回 gap 写 pos 文件（gap_y = 窗口y + 5 字体内边距）。
+# 被：conky-scale 在重启卡之后调用。依赖：python-xlib。无参数。窗口未找到时静默退出。
+
+from pathlib import Path
+from Xlib import display
+
+CONF = Path('$CONF')
+X = 14          # 右侧留边（与 lua 默认 gap_x 一致）
+PAD = 5         # gap_y 与窗口实际 y 的字体留白差（两段校准实测）
+GAP = 8         # 两卡纵向间隙
+
+d = display.Display()
+root = d.screen().root
+sw, sh = d.screen().width_in_pixels, d.screen().height_in_pixels
+
+wins = {}
+for c in root.query_tree().children:
+    try:
+        nm = c.get_wm_name() or ''
+    except Exception:
+        continue
+    for key, title in (('system', 'conky-system-card'), ('token', 'conky-token-card')):
+        if title in nm and key not in wins:
+            geo = c.get_geometry()
+            tr = c.translate_coords(root, 0, 0)
+            wins[key] = (c, geo.width, geo.height, -tr.y)   # 窗口, w, h, abs_y
+
+if 'system' not in wins:
+    raise SystemExit
+
+sys_c, sys_w, sys_h, sys_y = wins['system']
+if 'token' in wins:
+    tok_c, tok_w, tok_h, tok_y = wins['token']
+    total = sys_h + GAP + tok_h
+    if sys_y + total > sh - 4:                 # 整体放不下 → 贴屏幕底往上排
+        sys_y = max(0, sh - 4 - total)
+    tok_y = sys_y + sys_h + GAP
+else:
+    sys_y = min(sys_y, sh - sys_h - 4)         # 单卡：只防出屏
+
+def put(card, w, h, y):
+    card.configure(x=sw - w - X, y=max(0, y))
+    return max(0, y)
+
+sys_y = put(sys_c, sys_w, sys_h, sys_y)
+(CONF / 'pos-system.txt').write_text(f'{X} {sys_y + PAD}')
+if 'token' in wins:
+    tok_y = put(tok_c, tok_w, tok_h, tok_y)
+    (CONF / 'pos-token.txt').write_text(f'{X} {tok_y + PAD}')
+
+d.sync()

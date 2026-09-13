@@ -1,0 +1,19 @@
+[Unit]
+Description=Conky AI Cards (system + AI token usage)
+# 可选的开机自启方式（与 .desktop 二选一），优点是日志进 journal、unit 化管理。
+# 注意：conky 以 daemonize 方式启动，本 unit 是"启动器"语义（oneshot），
+#   不监视 conky 进程存活——需要崩溃自动拉起请自行包 supervisor/tmux。
+# 启用：
+#   mkdir -p ~/.config/systemd/user && cp conky-ai-cards.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now conky-ai-cards
+#   rm ~/.config/autostart/conky-cards.desktop   # 避免双启
+# 停用：systemctl --user disable --now conky-ai-cards
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=%h/.config/conky-ai-cards/start-all.sh
+ExecStop=/usr/bin/pkill -x conky
+
+[Install]
+WantedBy=default.target

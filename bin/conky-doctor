@@ -1,0 +1,75 @@
+#!/bin/bash
+CONF="$HOME/.config/conky-ai-cards"
+BIN="$HOME/.local/bin"
+# conky-doctor — 悬浮卡环境自检：逐项探测依赖并给出"哪些功能能亮"的报告。
+# 文件血缘：ZCode 会话 2026-09-13 创建（v6）。用法：conky-doctor，无需参数。
+# 检查项：conky/python3/zenity/xwininfo/notify-send、中文字体、方块字符字体、
+#   python-xlib（点击穿透）、nvidia-smi（GPU/显存）、温度传感器、X11 会话、ZCode 用量库。
+
+G="\033[1;32m"; Y="\033[1;33m"; R="\033[1;31m"; N="\033[0m"
+ok=0; warn=0; bad=0
+
+chk() {  # $1=命令名 $2=用途说明
+    if command -v "$1" >/dev/null 2>&1; then
+        echo -e "  ${G}✓${N} $1 —— $2"; ok=$((ok+1))
+    else
+        echo -e "  ${R}✗${N} $1 —— $2 ${R}不可用${N}（sudo apt install 或 pip install 对应包）"; bad=$((bad+1))
+    fi
+}
+
+echo "=== conky-ai-cards / 悬浮卡 环境自检 ==="
+echo "[命令依赖]"
+chk conky      "卡片本体（conky-all）"
+chk python3    "正文生成（sys-body/zcode-today）"
+chk zenity     "控制菜单弹窗"
+chk xwininfo   "位置记忆（x11-utils）"
+chk notify-send "告警通知（libnotify-bin）"
+
+echo "[Python 模块]"
+if python3 -c "import Xlib" 2>/dev/null; then
+    echo -e "  ${G}✓${N} python-xlib —— 点击穿透"; ok=$((ok+1))
+else
+    echo -e "  ${Y}△${N} python-xlib 缺失 —— 点击穿透不可用（pip install python-xlib）"; warn=$((warn+1))
+fi
+
+echo "[字体]"
+if fc-list 2>/dev/null | grep -qi "Noto Sans CJK"; then
+    echo -e "  ${G}✓${N} Noto Sans CJK —— 中文标签"; ok=$((ok+1))
+else
+    echo -e "  ${Y}△${N} Noto Sans CJK 缺失 —— 中文会显示豆腐块（fonts-noto-cjk）"; warn=$((warn+1))
+fi
+if fc-list ':charset=2581' family 2>/dev/null | grep -qi WenQuanYi; then
+    echo -e "  ${G}✓${N} 文泉驿 —— 趋势/柱状图方块字符"; ok=$((ok+1))
+else
+    echo -e "  ${Y}△${N} 文泉驿缺失 —— 趋势图/7日柱状图显示异常（fonts-wqy-microhei）"; warn=$((warn+1))
+fi
+
+echo "[功能数据源]"
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi -L >/dev/null 2>&1; then
+    echo -e "  ${G}✓${N} nvidia-smi —— GPU/显存/PCIe链路 全功能"; ok=$((ok+1))
+else
+    echo -e "  ${Y}△${N} nvidia-smi 不可用 —— GPU/显存行自动降级隐藏"; warn=$((warn+1))
+fi
+if ls /sys/class/hwmon/hwmon*/temp1_input >/dev/null 2>&1; then
+    echo -e "  ${G}✓${N} hwmon 温度传感器 —— CPU 温度"; ok=$((ok+1))
+else
+    echo -e "  ${Y}△${N} hwmon 无温度传感器 —— 温度段隐藏"; warn=$((warn+1))
+fi
+if [ -f "$HOME/.zcode/cli/db/db.sqlite" ]; then
+    echo -e "  ${G}✓${N} ZCode 用量库 —— 今日token卡全功能"; ok=$((ok+1))
+else
+    echo -e "  ${Y}△${N} 无 ZCode 用量库 —— token卡显示提示（不报错）"; warn=$((warn+1))
+fi
+
+echo "[会话]"
+if [ -n "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
+    echo -e "  ${G}✓${N} X11 会话 —— 点击穿透可用"; ok=$((ok+1))
+elif [ -n "$WAYLAND_DISPLAY" ]; then
+    echo -e "  ${Y}△${N} Wayland 会话 —— 卡片正常显示，但点击穿透对原生窗口无效"; warn=$((warn+1))
+else
+    echo -e "  ${R}✗${N} 无图形会话"; bad=$((bad+1))
+fi
+
+echo "----------------------------------------"
+echo -e "结果：${G}${ok} 项就绪${N} · ${Y}${warn} 项降级可用${N} · ${R}${bad} 项缺失${N}"
+echo "卡片在缺依赖时自动降级（隐藏对应行），不会崩溃。"

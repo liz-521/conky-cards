@@ -1,0 +1,31 @@
+#!/bin/bash
+# conky-theme — 悬浮卡配色主题切换：theme.txt 写主题名 → 重启两卡。
+# 文件血缘：ZCode 会话 2026-09-13 创建（v6 主题系统）。主题定义在 ~/.config/conky/themes/*.conf
+#   （key=value：title/text/dim/warn/crit/down/up/accent/bg），lua 读 bg/text，python 正文读全套。
+# 内置：nord / gruvbox / dracula / catppuccin。自定义：往 themes/ 丢一个 <名>.conf 即出现在列表。
+# 被：conky-ctl"主题"调用；终端敲 conky-theme [名] 直接切，无参弹选择窗。
+
+CONF=$CONF
+cur=$(cat "$CONF/theme.txt" 2>/dev/null || echo nord)
+
+if [ -n "$1" ]; then
+    sel="$1"
+else
+    names=$(cd "$CONF/themes" && ls *.conf 2>/dev/null | sed 's/\.conf$//;s/^//' | tr -d '/' | sed 's/^/TRUE\n/' >/dev/null; cd "$CONF/themes" && for f in *.conf; do n="${f%.conf}"; [ "$n" = "$cur" ] && m="TRUE" || m="FALSE"; echo "$n|$m|$(head -1 "$f" | sed 's/^# *//')"; done)
+    sel=$(echo "$names" | awk -F'|' '{print $1}' | zenity --list --title="悬浮卡主题" \
+        --text="当前：$cur（重启后生效即所见）" --radiolist \
+        --column="选" --column="主题" --column="说明" \
+        $(echo "$names" | awk -F'|' '{print $2, $1, $3}') \
+        --height=300 --width=380 2>/dev/null)
+    [ -z "$sel" ] && exit 0
+fi
+
+[ -f "$CONF/themes/$sel.conf" ] || { notify-send -u critical '悬浮卡' "没有主题：$sel"; exit 1; }
+
+echo "$sel" > "$CONF/theme.txt"
+pkill -x conky 2>/dev/null
+sleep 1
+bash "$CONF/start-all.sh"
+sleep 2
+$BIN/conky-relayout
+notify-send -i utilities-system-monitor '悬浮卡主题' "已切换：$sel"

@@ -1,8 +1,8 @@
 #!/bin/bash
 # conky-ctl — 悬浮卡控制中心（conky-ai-cards）：一个入口管全部操作
-# 被：应用菜单 "悬浮卡控制"（autostart/ 里有 .desktop 模板）调用；终端敲 conky-ctl 同效。
-# 依赖：zenity（Ubuntu 自带）；底层动作复用 conky-card / conky-scale / conky-alpha /
-#   conky-remember-pos / conky-clickthrough。
+# 被：应用菜单 "悬浮卡控制" 调用；终端敲 conky-ctl 同效。
+# 依赖：zenity；底层动作复用 conky-card / conky-scale / conky-alpha /
+#   conky-remember-pos / conky-clickthrough / conky-theme。
 
 CONF="$HOME/.config/conky-ai-cards"
 BIN="$HOME/.local/bin"
@@ -20,7 +20,9 @@ choice=$(zenity --list --title="悬浮卡控制" --text="要做什么？" --hide
   "透明度" "实色 / 半透 / 玻璃(背景全透文字实色) 六档" \
   "只留token卡" "关掉系统卡，只留今日token卡" \
   "点击穿透" "$CT_DESC" \
-  --height=430 --width=430 2>/dev/null)
+  "主题" "Nord / Gruvbox / Dracula / Catppuccin 一键切" \
+  "缩放(无级)" "拖滑块选 0.70~2.00 任意大小" \
+  --height=470 --width=430 2>/dev/null)
 
 # Esc / 取消 → 空值，什么都不做
 [ -z "$choice" ] && exit 0
@@ -34,4 +36,6 @@ case "$choice" in
   透明度) "$BIN/conky-alpha" ;;
   只留token卡) "$BIN/conky-card" token ;;
   点击穿透) "$BIN/conky-clickthrough" toggle ;;
+  主题) "$BIN/conky-theme" ;;
+  缩放\(无级\)) "$BIN/conky-scale" ;;
 esac

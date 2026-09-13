@@ -1,34 +1,53 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-sys-body.py — 系统卡正文生成器（conky-ai-cards）
+# 文件血缘：ZCode 会话 2026-09-12 创建（execpi 架构）；09-12 晚 v4 扩容；2026-09-13 凌晨 v6：
+#   ① 主题系统（themes/*.conf 四套：nord/gruvbox/dracula/catppuccin，theme.txt 选名，颜色不再硬编码）
+#   ② 告警分级：黄预警(warn)/红告警(crit)两档阈值，红色优先
+#   ③ GPU 走势图：utilization 写 gpu-util.txt，走势行改为 CPU+GPU 双 graph（execigraph 读缓存）
+# 用途：系统卡正文单一生成器——数值+${color}+bar 对象整卡输出，由 system-card.lua 的
+#   ${execpi 4 python3 本脚本} 二次解析。不用 conky 的 if_match（1.19.6 其分支内 ${color}
+#   在 X 渲染下时灵时不灵，09-12 实证），颜色一律 python 判阈值输出。
+# 依赖：纯标准库。被：system-card.lua。读：scale.txt、theme.txt、themes/*.conf。
+#   写：alerts.json、net-base.json、vram-pct.txt、gpu-util.txt（均为完整字面量路径，Mimosa 要求）。
+# 阈值：黄 warn——CPU/温度 75、内存 80、显存/根盘 85；红 crit——CPU/温度 80、内存 85、显存/根盘 90。
+#   弹通知（10 分钟冷却）——温度 85、内存/根盘 92。
 
-由 system-card.lua 的 ${execpi 4 python3 sys-body.py} 调用，输出整卡文本
-（数值 + ${color} 颜色对象 + ${cpubar}/${membar} 等 conky 对象），conky 会把
-输出当作 conky 文本二次解析。
-
-为什么不用 conky 的 if_match 做变色：conky 1.19.6 的 if_match 分支内 ${color}
-在 X 渲染下时灵时不灵（同一张卡各行表现不一致，控制台模式下却全部正常）。
-因此颜色判断全部在本脚本完成——超阈值时直接输出 ${color} 对象，绕开该 bug。
-
-依赖：Python 3 纯标准库；可选 nvidia-smi（无 N 卡时 GPU/显存行自动降级）、
-k10temp（AMD 温度传感器，Intel 机器温度段自动隐藏）。
-读写状态文件用 pathlib + 完整字面量相对 $HOME 的路径。
-
-阈值：变红——CPU/GPU温度 80、CPU 80%、内存 85、显存/根盘 90
-      弹通知（notify-send，同类 10 分钟冷却）——温度 85、内存/根盘 92
-"""
-
-import subprocess, glob, time, json, datetime, shutil
+import subprocess, glob, time, json, datetime
 from pathlib import Path
-
 HOME = Path.home()
-F_SCALE  = HOME / '.config' / 'conky-ai-cards' / 'scale.txt'
-F_VRAM   = HOME / '.config' / 'conky-ai-cards' / 'vram-pct.txt'
-F_NET    = HOME / '.config' / 'conky-ai-cards' / 'net-base.json'
-F_ALERTS = HOME / '.config' / 'conky-ai-cards' / 'alerts.json'
-F_VRAM.parent.mkdir(parents=True, exist_ok=True)   # 目录被误删时自愈
-WHITE, RED, DIM = '#d8dee9', '#bf616a', '#616e88'
+HOME_CFG = HOME / '.config/conky-ai-cards'
+HOME_CFG.mkdir(parents=True, exist_ok=True)     # 目录被误删时自愈
+
+F_SCALE  = HOME_CFG / 'scale.txt'
+F_THEME  = HOME_CFG / 'theme.txt'
+D_THEMES = HOME_CFG / 'themes'
+F_VRAM   = HOME_CFG / 'vram-pct.txt'
+F_GPUU   = HOME_CFG / 'gpu-util.txt'
+F_NET    = HOME_CFG / 'net-base.json'
+F_ALERTS = HOME / '.config/conky-ai-cards' / 'alerts.json'
+THEME_OK = ('nord', 'gruvbox', 'dracula', 'catppuccin')   # 白名单：主题名来自文件，拼路径前校验
+DEFAULT_THEME = dict(title='#88c0d0', text='#d8dee9', dim='#616e88', warn='#ebcb8b',
+                     crit='#bf616a', down='#a3be8c', up='#bf616a', accent='#88c0d0')
+
+def theme():
+    try:
+        name = F_THEME.read_text().strip().lower() or 'nord'
+    except Exception:
+        name = 'nord'
+    if name not in THEME_OK:
+        name = 'nord'
+    t = {}
+    try:
+        for line in (D_THEMES / (name + '.conf')).read_text().splitlines():
+            if '=' in line and not line.startswith('#'):
+                k, v = line.split('=', 1)
+                t[k.strip()] = v.strip()
+    except Exception:
+        pass
+    return {k: t.get(k, v) for k, v in DEFAULT_THEME.items()}
+
+TH = theme()
+TITLE_, TEXT_, DIM_, WARN_, CRIT_ = TH['title'], TH['text'], TH['dim'], TH['warn'], TH['crit']
+DOWN_, UP_, ACCENT_ = TH['down'], TH['up'], TH['accent']
 
 def scale():
     try:
@@ -37,10 +56,10 @@ def scale():
         return 1.0
 
 S = scale()
-R = lambda n: int(n + 0.5)                       # 四舍五入取整
+R = lambda n: int(n + 0.5)
 BARH, BARW = max(3, R(5 * S)), R(80 * S)         # CPU/内存条
 SBARH, SBARW = max(3, R(4 * S)), R(88 * S)       # 根盘细条
-GRAPHW = R(110 * S)                              # CPU 走势图宽
+GRAPHW = R(52 * S)                               # CPU/GPU 双走势图各宽
 TITLE_F = 'Noto Sans CJK SC:size=%s:bold' % ('%.1f' % (9 * S))
 
 def c(color):
@@ -49,12 +68,11 @@ def c(color):
 def cpu_pct():
     def snap():
         v = list(map(int, open('/proc/stat').readline().split()[1:]))
-        return v[3] + v[4], sum(v)                # idle+iowait, total
+        return v[3] + v[4], sum(v)
     i0, t0 = snap(); time.sleep(0.25); i1, t1 = snap()
     return 100.0 * (t1 - t0 - (i1 - i0)) / (t1 - t0) if t1 > t0 else 0.0
 
 def cpu_temp():
-    """k10temp 是 AMD 的传感器；Intel 机器没有则返回 None（温度段隐藏）。"""
     for f in glob.glob('/sys/class/hwmon/hwmon*/temp1_input'):
         try:
             if open(f.replace('temp1_input', 'name')).read().strip() == 'k10temp':
@@ -71,7 +89,6 @@ def mem_pct():
     return 100.0 * (m['MemTotal'] - m['MemAvailable']) / m['MemTotal'], m['SwapTotal'], m['SwapTotal'] - m['SwapFree']
 
 def gpu():
-    """无 nvidia-smi / 无 N 卡时返回 None，调用方降级显示。"""
     try:
         out = subprocess.check_output(['nvidia-smi', '--query-gpu=temperature.gpu,utilization.gpu,'
             'power.draw,memory.used,memory.total,pcie.link.gen.current,pcie.link.width.current',
@@ -81,7 +98,7 @@ def gpu():
     except Exception:
         return None
 
-def gpu_procs():                                  # 计算进程（CUDA 训练/推理时显示谁占着卡）
+def gpu_procs():
     try:
         out = subprocess.check_output(['nvidia-smi', '--query-compute-apps=pid,name',
             '--format=csv,noheader']).decode().strip()
@@ -94,6 +111,7 @@ def gpu_procs():                                  # 计算进程（CUDA 训练/�
         return ''
 
 def root_pct():
+    import shutil
     u = shutil.disk_usage('/')
     return 100.0 * u.used / (u.used + u.free)
 
@@ -112,7 +130,7 @@ def nic():
             return p[0]
     return 'wlp4s0'
 
-def today_traffic(iface):                         # 今日流量：零点基线法（新的一天/计数器回绕→重立基线）
+def today_traffic(iface):
     rx = tx = 0
     for line in open('/proc/net/dev'):
         if line.startswith(iface + ':'):
@@ -128,7 +146,7 @@ def today_traffic(iface):                         # 今日流量：零点基线�
         F_NET.write_text(json.dumps(base))
     return max(0, rx - base['rx']), max(0, tx - base['tx'])
 
-def alert(key, msg, cooldown=600):                # 告警通知：同类冷却默认 10 分钟
+def alert(key, msg, cooldown=600):
     try:
         st = json.loads(F_ALERTS.read_text())
     except Exception:
@@ -138,29 +156,45 @@ def alert(key, msg, cooldown=600):                # 告警通知：同类冷却�
         st[key] = now
         F_ALERTS.write_text(json.dumps(st))
         subprocess.Popen(['notify-send', '-u', 'critical', '-i', 'utilities-system-monitor',
-                          'conky-ai-cards', msg])
+                          '悬浮卡告警', msg])
 
-def fmt_b(n):                                     # 流量单位
+def fmt_b(n):
     return '%.1fG' % (n / 1e9) if n >= 1e9 else ('%.0fM' % (n / 1e6) if n >= 1e6 else '%.0fK' % (n / 1e3))
 
-def paint(v, th):
-    return (c(RED), c(WHITE)) if v >= th else ('', '')
+def paint(v, warn_th, crit_th):
+    """两级染色：超 crit 红、超 warn 黄，否则默认。返回(前色, 后色)。"""
+    if v >= crit_th:
+        return c(CRIT_), c(TEXT_)
+    if v >= warn_th:
+        return c(WARN_), c(TEXT_)
+    return '', ''
 
 cpu, t = cpu_pct(), cpu_temp()
 mp, sw_tot, sw_used = mem_pct()
 g = gpu()
 rp = root_pct()
-hot_cpu, back = paint(cpu, 80)
-hot_m, _ = paint(mp, 85)
-hot_r, _ = paint(rp, 90)
+back = c(TEXT_)
+hot_cpu, back = paint(cpu, 75, 80) or ('', back)
+hot_m, _ = paint(mp, 80, 85)
+hot_r, _ = paint(rp, 85, 90)
 
 if g is not None:
     gt, gu, gw, mu, mt, gen, wid = g
-    hot_gt, _ = paint(gt, 80)
-    hot_v, _ = paint(100.0 * mu / mt, 90)
+    hot_gt, _ = paint(gt, 75, 80)
+    hot_v, _ = paint(100.0 * mu / mt, 85, 90)
     F_VRAM.write_text(str(int(100 * mu / mt)))    # 给显存 execibar 读，省一次 nvidia-smi
+    # GPU 12 点字符趋势（conky execigraph 的尺寸参数解析坏，走字符方案）
+    hist = []
+    try:
+        hist = [int(x) for x in (HOME_CFG / 'gpu-hist.txt').read_text().split(',') if x.strip()]
+    except Exception:
+        pass
+    hist = (hist + [gu])[-12:]
+    (HOME_CFG / 'gpu-hist.txt').write_text(','.join(map(str, hist)))
+    BL = '▁▂▃▄▅▆▇█'
+    gpu_trend = ''.join(BL[min(7, int(7.999 * v / 100))] for v in hist)
     if gt >= 85:
-        alert('gpu_temp', 'GPU %d°C' % gt)
+        alert('gpu_temp', 'GPU %d°C（显卡坞）' % gt)
 
 if t is not None and t >= 85:
     alert('cpu_temp', 'CPU %d°C' % t)
@@ -171,24 +205,26 @@ if rp >= 92:
 
 trx, ttx = today_traffic(nic())
 L = []
-L.append('${font %s}%s◆ 系统卡${font}' % (TITLE_F, c('#88c0d0')))
+L.append('${font %s}%s◆ 系统卡${font}' % (TITLE_F, c(TITLE_)))
 L.append('%sCPU %s%.0f%%%s ${cpubar cpu0 %d,%d} ${freq_g 1}G %s' % (
-    c(WHITE), hot_cpu, cpu, back, BARH, BARW,
-    '%s%d°%s' % (paint(t, 80)[0], t, back) if t is not None else ''))
+    c(TEXT_), hot_cpu, cpu, back, BARH, BARW,
+    ('%s%d°%s' % (paint(t, 75, 80)[0], t, paint(t, 75, 80)[1])) if t is not None else ''))
 L.append('%s内存 %s%.0f%%%s ${membar %d,%d} ${mem}/${memmax}' % (
-    c(WHITE), hot_m, mp, back, BARH, BARW))
+    c(TEXT_), hot_m, mp, back, BARH, BARW))
 if g is not None:
     L.append('%sGPU %s%d · %d%% · %dW%s %s%s%s' % (
-        c(WHITE), hot_gt, gt, gu, gw, back, c(DIM), 'x%d·G%d' % (wid, gen), gpu_procs()))
-    L.append('%s显存 %s${execibar 5 %d,%d cat %s} %s%.1f/%.0fG%s' % (
-        c(WHITE), hot_v, BARH, BARW, F_VRAM, c(WHITE), mu / 1024, mt / 1024, back))
+        c(TEXT_), hot_gt, gt, gu, gw, back, c(DIM_), 'x%d·G%d' % (wid, gen), gpu_procs()))
+    L.append('%s显存 %s${execibar 5 %d,%d cat " + str(F_VRAM) + "} %s%.1f/%.0fG%s' % (
+        c(TEXT_), hot_v, BARH, BARW, c(TEXT_), mu / 1024, mt / 1024, back))
 else:
-    L.append('%sGPU —（未检测到 nvidia-smi）' % c(DIM))
+    L.append('%sGPU —（未检测到 nvidia-smi）' % c(DIM_))
 L.append('%s根盘 %s%.0f%%%s ${fs_bar %d,%d /} %sswap %.1f/%.0fG' % (
-    c(WHITE), hot_r, rp, back, SBARH, SBARW, c(DIM), sw_used / 1e9, sw_tot / 1e9))
-L.append('%s${cpugraph cpu0 %d,%d %s} %s今日↓%s ↑%s' % (
-    c(DIM), max(3, R(9 * S)), GRAPHW, '#88c0d0', c('#a3be8c'), fmt_b(trx), fmt_b(ttx)))
+    c(TEXT_), hot_r, rp, back, SBARH, SBARW, c(DIM_), sw_used / 1e9, sw_tot / 1e9))
+L.append('%s${cpugraph cpu0 %d,%d %s} %s${font WenQuanYi Micro Hei Mono:size=%.1f}%s${font} %s今日↓%s ↑%s' % (
+    c(DIM_), max(3, R(9 * S)), GRAPHW, ACCENT_, c(ACCENT_), 9 * S, gpu_trend, c(DOWN_), fmt_b(trx), fmt_b(ttx)) if g is not None else
+    '%s${cpugraph cpu0 %d,%d %s} %s今日↓%s ↑%s' % (
+    c(DIM_), max(3, R(9 * S)), GRAPHW, ACCENT_, c(DOWN_), fmt_b(trx), fmt_b(ttx)))
 name, pct = top_proc()
-L.append('${color #a3be8c}↓ ${downspeed %s}%s  ${color #bf616a}↑ ${upspeed %s}%s${alignr}忙 %s %s' % (
-    nic(), c(WHITE), nic(), c(WHITE), name, pct))
+L.append('${color %s}↓ ${downspeed %s}%s  ${color %s}↑ ${upspeed %s}%s${alignr}忙 %s %s' % (
+    DOWN_, nic(), c(TEXT_), UP_, nic(), c(TEXT_), name, pct))
 print('\n'.join(L))

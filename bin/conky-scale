@@ -1,13 +1,29 @@
 #!/bin/bash
-# conky-scale — 悬浮卡等比缩放（conky-ai-cards）：改 scale.txt 系数(0.7~2.0)并重启两卡
-# 用法：conky-scale 1.2 | conky-scale +0.1 | conky-scale -0.1 | conky-scale reset
-# 原理：conky 卡尺寸=内容算出（不能拖拽缩放），两卡字号/卡宽/条宽全部由该系数驱动，
-#       lua（窗口宽度）和 python（进度条宽度）都读它，改完重启即整卡等比缩放。
+# conky-scale — 悬浮卡缩放：无参弹 zenity 滑块（无级选 0.70~2.00）；带参保持步进/设值语义。
+# 文件血缘：ZCode 会话 2026-09-10 创建；2026-09-13 改造无级滑块（zenity --scale 步进只支持
+#   整数，用百分数 70~200 映射 0.70~2.00，实现连续选值）。菜单"放大/缩小/复位"继续走带参调用。
+# 原理：conky 配置只在启动时读一次（2026-09-13 实测 SIGHUP=退出而非重载），改完 scale.txt
+#   必须重启两卡——观感是"闪一下按新尺寸重生"，这是 conky 架构下的体验上限。
+# 用法：conky-scale            弹滑块
+#       conky-scale 1.2        直接设值
+#       conky-scale +0.1/-0.1  步进
+#       conky-scale reset      恢复 1.0
 
-CONF="$HOME/.config/conky-ai-cards"
+CONF=$CONF
 SC="$CONF/scale.txt"
 cur=$(cat "$SC" 2>/dev/null || echo 1)
 arg="${1:-}"
+
+if [ -z "$arg" ]; then
+    # 滑块模式：百分数 70~200，步进 1 = 0.01 精度
+    pct=$(zenity --scale --title="悬浮卡缩放（无级）" \
+        --text="拖动选大小，确定后卡片闪一下生效\n当前 $(awk -v c="$cur" 'BEGIN{printf "%.2f", c}')×" \
+        --min-value=70 --max-value=200 --step=1 \
+        --value=$(awk -v c="$cur" 'BEGIN{printf "%d", c*100+0.5}') 2>/dev/null)
+    [ -z "$pct" ] && exit 0                    # 取消：不动
+    arg=$(awk -v p="$pct" 'BEGIN{printf "%.2f", p/100}')
+    silent=1                                   # 滑块已自带确认反馈
+fi
 
 new=$(awk -v c="$cur" -v a="$arg" 'BEGIN{
   if (a == "reset") n = 1;
@@ -21,4 +37,6 @@ echo "$new" > "$SC"
 pkill -x conky 2>/dev/null
 sleep 1
 bash "$CONF/start-all.sh"
-notify-send -i utilities-system-monitor "悬浮卡" "缩放已设为 ${new}×（0.70~2.00 之间有效）"
+sleep 2
+$BIN/conky-relayout      # 缩放后自动重排：防出屏/防两卡重叠（2026-09-13）
+[ -z "$silent" ] && notify-send -i utilities-system-monitor "悬浮卡" "缩放已设为 ${new}×（0.70~2.00 之间有效）"
