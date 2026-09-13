@@ -1,0 +1,33 @@
+#!/bin/bash
+# conky-card — 悬浮卡开关（conky-ai-cards）
+# 无参数=总开关（在跑就全关、没跑就全开）；带参数=只留指定卡。
+# 用法：conky-card            总开关（全开 ⇄ 全关）
+#       conky-card token      只留今日token卡
+#       conky-card system     只留系统卡
+#       conky-card all        全部开启
+
+DIR="$HOME/.config/conky-ai-cards"
+run_card() { conky --daemonize -c "$DIR/$1-card.lua"; }
+
+case "${1:-}" in
+  token)
+    pkill -x conky 2>/dev/null; sleep 1
+    run_card token
+    notify-send -i utilities-system-monitor '悬浮卡' '只留：今日token卡' ;;
+  system)
+    pkill -x conky 2>/dev/null; sleep 1
+    run_card system
+    notify-send -i utilities-system-monitor '悬浮卡' '只留：系统卡' ;;
+  all)
+    pkill -x conky 2>/dev/null; sleep 1
+    bash "$DIR/start-all.sh"
+    notify-send -i utilities-system-monitor '悬浮卡' '已全部开启' ;;
+  *)
+    if pgrep -x conky >/dev/null; then
+        pkill -x conky
+        notify-send -i utilities-system-monitor '悬浮卡' '已全部关闭（再点一次重新开启）'
+    else
+        bash "$DIR/start-all.sh"
+        notify-send -i utilities-system-monitor '悬浮卡' '已开启（系统卡 + 今日token卡）'
+    fi ;;
+esac

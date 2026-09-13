@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+conky-clickthrough — 悬浮卡点击穿透开关（conky-ai-cards）
+
+conky 没有点击穿透的配置项（conky -C 全量导出可证）。本脚本走 X11 的 XShape
+扩展做"外科手术"：把窗口 input region 置空 = 鼠标事件完全穿透（点击/滚轮直达
+下层窗口）；设回全窗口矩形 = 恢复。conky 本体零改动、无常驻进程——X server
+记住设置，本脚本施加完即退。
+
+依赖：python-xlib（pip install python-xlib，约 2MB 纯 python）。
+⚠️ XShape 设置随窗口销毁失效：一切重启卡的动作（缩放/透明度/记住位置/重启机）
+都会丢穿透。start-all.sh 末尾按状态文件自动重新施加；新增别的重启路径记得同样挂。
+
+用法：conky-clickthrough [on|off|toggle|status]，无参 = toggle。
+状态存 ~/.config/conky-ai-cards/clickthrough.txt。
+Super+拖动在穿透下仍可移卡（WM 的修饰键 grab 在 XShape 之上，实测有效）。
+"""
+
+import sys, time
+from pathlib import Path
+from Xlib import display
+from Xlib.ext import shape
+
+F_STATE = Path.home() / '.config' / 'conky-ai-cards' / 'clickthrough.txt'
+CARDS = ('conky-system-card', 'conky-token-card')
+
+def current():
+    try:
+        return F_STATE.read_text().strip()
+    except Exception:
+        return 'off'
+
+def set_state(mode):                      # mode: 'on' 穿透 / 'off' 恢复
+    d = display.Display()
+    root = d.screen().root
+    n = 0
+    for child in root.query_tree().children:
+        try:
+            name = child.get_wm_name() or ''
+        except Exception:
+            continue
+        if not any(c in name for c in CARDS):
+            continue
+        if mode == 'on':
+            child.shape_rectangles(shape.SO.Set, shape.SK.Input, 0, 0, 0, [])
+        else:
+            g = child.get_geometry()
+            child.shape_rectangles(shape.SO.Set, shape.SK.Input, 0, 0, 0,
+                                   [(0, 0, g.width, g.height)])
+        n += 1
+    d.sync()
+    F_STATE.write_text(mode)
+    return n
+
+def probe():                              # 实际查 X server 里的状态（不信文件）
+    d = display.Display()
+    root = d.screen().root
+    for child in root.query_tree().children:
+        try:
+            name = child.get_wm_name() or ''
+        except Exception:
+            continue
+        if 'conky-system-card' in name:
+            rects = child.shape_get_rectangles(shape.SK.Input).rectangles
+            return 'off（可点击）' if rects else 'on（穿透中）'
+    return '卡片未运行'
+
+def main():
+    arg = sys.argv[1] if len(sys.argv) > 1 else ('off' if current() == 'on' else 'on')
+    if arg == 'status':
+        print(f'状态文件: {current()} / X server 实际: {probe()}')
+        return
+    if arg == 'toggle':
+        arg = 'off' if current() == 'on' else 'on'
+    if arg not in ('on', 'off'):
+        sys.exit(__doc__)
+    n = set_state(arg)
+    msg = '已穿透（鼠标划过直达下层，Super+拖动仍可移卡）' if arg == 'on' else '已恢复可点击'
+    import subprocess
+    subprocess.Popen(['notify-send', '-i', 'utilities-system-monitor',
+                      '悬浮卡点击穿透', f'{msg}（{n} 张卡）' if n else '没找到卡片窗口'])
+
+if __name__ == '__main__':
+    main()

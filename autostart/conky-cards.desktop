@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Conky 悬浮卡
+Comment=开机自启两张 conky 卡（系统资源 + 今日token）
+Exec=/bin/bash -c "$HOME/.config/conky-ai-cards/start-all.sh"
+Terminal=false
+X-GNOME-Autostart-enabled=true
+Categories=Utility;

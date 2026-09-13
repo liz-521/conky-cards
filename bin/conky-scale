@@ -1,0 +1,24 @@
+#!/bin/bash
+# conky-scale — 悬浮卡等比缩放（conky-ai-cards）：改 scale.txt 系数(0.7~2.0)并重启两卡
+# 用法：conky-scale 1.2 | conky-scale +0.1 | conky-scale -0.1 | conky-scale reset
+# 原理：conky 卡尺寸=内容算出（不能拖拽缩放），两卡字号/卡宽/条宽全部由该系数驱动，
+#       lua（窗口宽度）和 python（进度条宽度）都读它，改完重启即整卡等比缩放。
+
+CONF="$HOME/.config/conky-ai-cards"
+SC="$CONF/scale.txt"
+cur=$(cat "$SC" 2>/dev/null || echo 1)
+arg="${1:-}"
+
+new=$(awk -v c="$cur" -v a="$arg" 'BEGIN{
+  if (a == "reset") n = 1;
+  else if (substr(a,1,1)=="+" || substr(a,1,1)=="-") n = c + a;
+  else n = a + 0;
+  if (n < 0.7) n = 0.7;
+  if (n > 2.0) n = 2.0;
+  printf "%.2f", n }')
+
+echo "$new" > "$SC"
+pkill -x conky 2>/dev/null
+sleep 1
+bash "$CONF/start-all.sh"
+notify-send -i utilities-system-monitor "悬浮卡" "缩放已设为 ${new}×（0.70~2.00 之间有效）"

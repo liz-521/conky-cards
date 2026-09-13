@@ -1,0 +1,30 @@
+#!/bin/bash
+# conky-alpha — 悬浮卡透明度（conky-ai-cards）：六档，写 alpha.txt 并重启两卡
+# 卡片本来就可带透明度（own_window_argb_value），只是深色背景下高不透明度看不出区别。
+# glass 档走 own_window_transparent：背景 alpha 归零、文字保持实色（更像浮空玻璃）。
+
+CONF="$HOME/.config/conky-ai-cards"
+AC="$CONF/alpha.txt"
+cur=$(cat "$AC" 2>/dev/null || echo 195)
+
+sel=$(zenity --list --title="悬浮卡透明度" --text="当前：$( [ "$cur" = glass ] && echo '玻璃(背景全透)' || echo "$cur / 255" )" --hide-header \
+  --column="档位" --column="说明" \
+  "255" "实色 100%（不透明）" \
+  "230" "轻透 90%" \
+  "195" "半透 76%" \
+  "153" "更透 60%（推荐）" \
+  "102" "极透 40%（浅色壁纸慎用）" \
+  "glass" "玻璃：背景全透、文字实色" \
+  --height=320 --width=400 2>/dev/null)
+
+[ -z "$sel" ] && exit 0          # Esc/取消：不动
+
+echo "$sel" > "$AC"
+pkill -x conky 2>/dev/null
+sleep 1
+bash "$CONF/start-all.sh"
+case "$sel" in
+  glass) msg="玻璃：背景全透、文字实色" ;;
+  *)     msg="$(( sel * 100 / 255 ))% 不透明（$sel/255）" ;;
+esac
+notify-send -i utilities-system-monitor '悬浮卡透明度' "已设为 $msg"
